@@ -51,7 +51,7 @@ func (h *Hub) ServeADC(conn net.Conn, cinfo *ConnInfo) error {
 		cntConnAlpnADC.Add(1)
 	}
 
-	h.Logf("%s: using ADC", conn.RemoteAddr())
+	h.Debugf("%s: using ADC", conn.RemoteAddr())
 	c, err := adc.NewConn(conn)
 	if err != nil {
 		return err
@@ -127,7 +127,7 @@ func (h *Hub) adcHandshake(c *adc.Conn, cinfo *ConnInfo) (*adcPeer, error) {
 
 func (h *Hub) adcServePeer(peer *adcPeer) error {
 	if !h.callOnJoined(peer) {
-		return nil // TODO: eny errors?
+		return nil // TODO: any errors?
 	}
 	// looks like we are disabling the timeout, but we are not
 	// the timeout will be set manually by the writer goroutine

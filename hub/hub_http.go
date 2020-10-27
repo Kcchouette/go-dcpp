@@ -72,7 +72,7 @@ func (h *Hub) ServeHTTP1(conn net.Conn) error {
 	cntConnHTTPOpen.Add(1)
 	defer cntConnHTTPOpen.Add(-1)
 
-	h.Logf("%s: using HTTP1", conn.RemoteAddr())
+	h.Debugf("%s: using HTTP1", conn.RemoteAddr())
 	// make a fake listener with only one connection
 	closed := make(chan struct{})
 	l := &singleListen{
@@ -92,7 +92,7 @@ func (h *Hub) ServeHTTP2(conn net.Conn) error {
 	cntConnHTTPOpen.Add(1)
 	defer cntConnHTTPOpen.Add(-1)
 
-	h.Logf("%s: using HTTP2", conn.RemoteAddr())
+	h.Debugf("%s: using HTTP2", conn.RemoteAddr())
 	h.h2.ServeConn(conn, h.h2conf)
 	return nil
 }

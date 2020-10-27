@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dsnet/compress/bzip2"
 	"github.com/spf13/cobra"
 	"golang.org/x/text/encoding/htmlindex"
 
@@ -135,6 +137,7 @@ func init() {
 	pingShareFiles := pingCmd.Flags().Int("files", 0, "declared share files")
 	pingSlots := pingCmd.Flags().Int("slots", 0, "declared slots")
 	pingHubs := pingCmd.Flags().Int("hubs", 0, "declared hub count")
+	pingOutFile := pingCmd.Flags().StringP("file", "f", "", "output file")
 	Root.AddCommand(pingCmd)
 	pingCmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
@@ -153,8 +156,37 @@ func init() {
 			mu    sync.Mutex
 			w     io.Writer = os.Stdout
 			enc   func(interface{}) error
-			flush func() error
+			flush []func() error
 		)
+		if fname := *pingOutFile; fname != "" && fname != "-" {
+			f, err := os.Create(fname)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			flush = append(flush, f.Close)
+			w = f
+			base := fname
+			if strings.HasSuffix(fname, ".gz") {
+				base = fname[:len(fname)-3]
+				zw := gzip.NewWriter(f)
+				flush = append(flush, zw.Close)
+				w = zw
+			} else if strings.HasSuffix(fname, ".bz2") {
+				base = fname[:len(fname)-4]
+				zw, err := bzip2.NewWriter(f, nil)
+				if err != nil {
+					return err
+				}
+				flush = append(flush, zw.Close)
+				w = zw
+			}
+			if strings.HasSuffix(base, ".xml") && *pingOut != "xml" && *pingOut != "xml-line" {
+				*pingOut = "xml"
+			} else if strings.HasSuffix(base, ".json") && *pingOut != "json" {
+				*pingOut = "json"
+			}
+		}
 		switch *pingOut {
 		case "json", "":
 			e := json.NewEncoder(w)
@@ -173,7 +205,7 @@ func init() {
 			enc = func(o interface{}) error {
 				return e.WriteHub(o.(hublist.Hub))
 			}
-			flush = e.Close
+			flush = append(flush, e.Close)
 		default:
 			return fmt.Errorf("unsupported format: %q", *pingOut)
 		}
@@ -187,9 +219,40 @@ func init() {
 		adc.Debug = *pingDebug
 		dc.Debug = *pingDebug
 
+		// preprocess args and read hublist files, if any
+		var toPing []hublist.Hub
+		for i := 0; i < len(args); i++ {
+			addr := args[i]
+			if strings.HasSuffix(addr, ".xml.bz2") {
+				f, err := os.Open(addr)
+				if err != nil {
+					return err
+				}
+				list, err := hublist.DecodeBZip2(f)
+				_ = f.Close()
+				if err != nil {
+					return err
+				}
+				toPing = append(toPing, list...)
+			} else if strings.HasSuffix(addr, ".xml") {
+				f, err := os.Open(addr)
+				if err != nil {
+					return err
+				}
+				list, err := hublist.Decode(f)
+				_ = f.Close()
+				if err != nil {
+					return err
+				}
+				toPing = append(toPing, list...)
+			} else {
+				toPing = append(toPing, hublist.Hub{Address: addr})
+			}
+		}
+
 		rctx := context.Background()
 
-		conf := &dc.PingConfig{
+		conf := dc.PingConfig{
 			Name:       *pingName,
 			ShareSize:  *pingShare,
 			ShareFiles: *pingShareFiles,
@@ -197,13 +260,26 @@ func init() {
 			Hubs:       *pingHubs,
 		}
 
-		pingOne := func(addr string) error {
+		pingOne := func(h hublist.Hub) error {
 			ctx, cancel := context.WithTimeout(rctx, *pingTimeout)
 			defer cancel()
 
-			info, err := dc.Ping(ctx, addr, conf)
+			conf := conf
+			if h.Encoding != "" {
+				enc, err := htmlindex.Get(h.Encoding)
+				if err != nil {
+					log.Printf("unsupported encoding: %q: %v", h.Encoding, err)
+				} else {
+					conf.Encoding = enc
+				}
+			}
+
+			info, err := dc.Ping(ctx, h.Address, &conf)
 			if info != nil && !*pingUsers {
 				info.UserList = nil
+			}
+			if info != nil && info.Enc == "" && h.Encoding != "" {
+				info.Enc = h.Encoding
 			}
 			isOffline := false
 			if te, ok := err.(timeoutErr); ok && te.Timeout() {
@@ -236,7 +312,7 @@ func init() {
 					if isOffline {
 						status = "offline"
 					} else {
-						log.Println(err)
+						log.Printf("%q: %v", h.Address, err)
 					}
 				}
 				if info == nil {
@@ -245,7 +321,7 @@ func init() {
 						Status  string   `json:"status,omitempty"`
 						ErrCode int      `json:"errcode,omitempty"`
 					}{
-						Addr:    []string{addr},
+						Addr:    []string{h.Address},
 						Status:  status,
 						ErrCode: errCode,
 					})
@@ -271,7 +347,7 @@ func init() {
 					if isOffline {
 						status = "Offline"
 					} else {
-						log.Println(err)
+						log.Printf("%q: %v", h.Address, err)
 					}
 				}
 				if info != nil {
@@ -297,14 +373,14 @@ func init() {
 						out.Software = info.Server.Name
 					}
 					for _, addr2 := range info.Addr[1:] {
-						if !strings.HasPrefix(addr, addr2) && !strings.HasPrefix(addr2, addr) {
+						if !strings.HasPrefix(h.Address, addr2) && !strings.HasPrefix(addr2, h.Address) {
 							out.Failover = addr2
 							break
 						}
 					}
 				}
 				if out.Address == "" {
-					out.Address = addr
+					out.Address = h.Address
 				}
 				out.Status = status
 				if err := enc(out); err != nil {
@@ -317,16 +393,16 @@ func init() {
 		}
 
 		var wg sync.WaitGroup
-		jobs := make(chan string, *pingNum)
+		jobs := make(chan hublist.Hub, *pingNum)
 		errc := make(chan error, 1)
 		for i := 0; i < *pingNum; i++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				for addr := range jobs {
-					if err := pingOne(addr); err != nil {
+				for h := range jobs {
+					if err := pingOne(h); err != nil {
 						select {
-						case errc <- err:
+						case errc <- fmt.Errorf("%q: %w", h.Address, err):
 						default:
 						}
 					}
@@ -334,13 +410,13 @@ func init() {
 			}()
 		}
 
-		for _, addr := range args {
-			jobs <- addr
+		for _, h := range toPing {
+			jobs <- h
 		}
 		close(jobs)
 		wg.Wait()
-		if flush != nil {
-			if err := flush(); err != nil {
+		for i := len(flush) - 1; i >= 0; i-- {
+			if err := flush[i](); err != nil {
 				return err
 			}
 		}

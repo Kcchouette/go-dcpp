@@ -13,9 +13,17 @@ import (
 	nmdcp "github.com/direct-connect/go-dc/nmdc"
 	"github.com/direct-connect/go-dcpp/adc"
 	"github.com/direct-connect/go-dcpp/nmdc"
+	"golang.org/x/text/encoding"
 )
 
-type PingConfig = adc.PingConfig
+type PingConfig struct {
+	Name       string
+	ShareSize  uint64
+	ShareFiles int
+	Slots      int
+	Hubs       int
+	Encoding   encoding.Encoding // NMDC only
+}
 
 // Ping fetches the information about the specified hub.
 func Ping(ctx context.Context, addr string, conf *PingConfig) (*HubInfo, error) {
@@ -27,10 +35,12 @@ func Ping(ctx context.Context, addr string, conf *PingConfig) (*HubInfo, error) 
 		conf.Name = "pinger_" + strconv.FormatInt(num, 16)
 	}
 	if conf.Hubs == 0 {
-		conf.Hubs = 1 + rand.Intn(10)
+		// some hubs insist on a number of peer hubs to be <= 6
+		conf.Hubs = 1 + rand.Intn(5)
 	}
 	if conf.Slots == 0 {
-		conf.Slots = 5
+		// some hubs insist on a slots/hub ratio >= 2
+		conf.Slots = conf.Hubs * 3
 	}
 	if conf.ShareFiles == 0 {
 		conf.ShareFiles = 100 + rand.Intn(1000)
@@ -52,9 +62,14 @@ func Ping(ctx context.Context, addr string, conf *PingConfig) (*HubInfo, error) 
 
 	switch addr[:i] {
 	case nmdcSchema, nmdcsSchema:
+		var opts []nmdc.DialOption
+		if conf.Encoding != nil {
+			opts = append(opts, nmdc.WithFallbackEncoding(conf.Encoding))
+		}
 		hub, err := nmdc.Ping(ctx, addr, nmdc.PingConfig{
 			Name: conf.Name, Share: conf.ShareSize,
 			Slots: conf.Slots, Hubs: conf.Hubs,
+			DialOpt: opts,
 		})
 		if err == nmdc.ErrRegisteredOnly {
 			// TODO: should support error code in NMDC
@@ -131,7 +146,13 @@ func Ping(ctx context.Context, addr string, conf *PingConfig) (*HubInfo, error) 
 		}
 		return info, err
 	case adcSchema, adcsSchema:
-		hub, err := adc.Ping(ctx, addr, *conf)
+		hub, err := adc.Ping(ctx, addr, adc.PingConfig{
+			Name:       conf.Name,
+			ShareSize:  conf.ShareSize,
+			ShareFiles: conf.ShareFiles,
+			Slots:      conf.Slots,
+			Hubs:       conf.Hubs,
+		})
 		if err != nil && hub == nil {
 			return nil, err
 		}

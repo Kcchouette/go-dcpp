@@ -7,6 +7,7 @@ require (
 	github.com/beorn7/perks v1.0.0 // indirect
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/direct-connect/go-dc v0.10.3
+	github.com/dsnet/compress v0.0.1
 	github.com/go-irc/irc v2.1.0+incompatible
 	github.com/hidal-go/hidalgo v0.0.0-20190420191634-c112d74960ad
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
@@ -30,3 +31,5 @@ require (
 )
 
 replace github.com/Shopify/go-lua => github.com/direct-connect/go-lua v0.0.0-20190505214648-cdda08bfc989
+
+replace github.com/direct-connect/go-dc => ../go-dc

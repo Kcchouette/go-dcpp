@@ -28,16 +28,20 @@ func Get(ctx context.Context, url string) ([]Hub, error) {
 	return resp.List, err
 }
 
-// DecodeBZip2 decodes a .xml.bz2 files list.
-func DecodeBZip2(r io.Reader) ([]Hub, error) {
+// Decode decodes a .xml hub list.
+func Decode(r io.Reader) ([]Hub, error) {
 	var list struct {
 		List []Hub `xml:"Hubs>Hub"`
 	}
-	zr := bzip2.NewReader(r)
-	if err := xml.NewDecoder(zr).Decode(&list); err != nil {
+	if err := xml.NewDecoder(r).Decode(&list); err != nil {
 		return nil, err
 	}
 	return list.List, nil
+}
+
+// DecodeBZip2 decodes a .xml.bz2 hub list.
+func DecodeBZip2(r io.Reader) ([]Hub, error) {
+	return Decode(bzip2.NewReader(r))
 }
 
 var _ encoding.TextUnmarshaler = (*Size)(nil)

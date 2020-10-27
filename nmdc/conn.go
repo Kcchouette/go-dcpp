@@ -1,21 +1,19 @@
 package nmdc
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
 	"log"
 	"net"
 	"strconv"
-	"sync"
-	"time"
-	"unicode/utf8"
+	"sync/atomic"
 
 	"golang.org/x/text/encoding"
 
 	"github.com/direct-connect/go-dc/keyprint"
 	"github.com/direct-connect/go-dc/keyprint/tlskp"
+	"github.com/direct-connect/go-dc/lineproto"
 	"github.com/direct-connect/go-dc/nmdc"
 )
 
@@ -30,12 +28,42 @@ const writeBuffer = 0
 var dialer = net.Dialer{}
 
 // Dial connects to a specified address.
-func Dial(addr string) (*Conn, error) {
-	return DialContext(context.Background(), addr)
+func Dial(addr string, opts ...DialOption) (*Conn, error) {
+	return DialContext(context.Background(), addr, opts...)
+}
+
+type dialConfig struct {
+	ExpectKPs []string
+	ConnOpts  []nmdc.ConnOption
+}
+
+type DialOption interface {
+	apply(c *dialConfig)
+}
+type dialOptionFunc func(c *dialConfig)
+
+func (f dialOptionFunc) apply(c *dialConfig) {
+	f(c)
+}
+
+func WithExpectedKPs(kps ...string) DialOption {
+	return dialOptionFunc(func(c *dialConfig) {
+		c.ExpectKPs = append(c.ExpectKPs, kps...)
+	})
+}
+
+func WithConnOpts(opts ...nmdc.ConnOption) DialOption {
+	return dialOptionFunc(func(c *dialConfig) {
+		c.ConnOpts = append(c.ConnOpts, opts...)
+	})
 }
 
 // DialContext connects to a specified address.
-func DialContext(ctx context.Context, addr string) (*Conn, error) {
+func DialContext(ctx context.Context, addr string, opts ...DialOption) (*Conn, error) {
+	var conf dialConfig
+	for _, opt := range opts {
+		opt.apply(&conf)
+	}
 	u, err := nmdc.ParseAddr(addr)
 	if err != nil {
 		return nil, err
@@ -77,284 +105,68 @@ func DialContext(ctx context.Context, addr string) (*Conn, error) {
 		conn = sconn
 		// verify keyprint if it's set in the URL
 		if exp := keyprint.FromURL(u); exp != "" {
-			if kps, err = tlskp.VerifyKeyPrint(sconn, exp); err != nil {
+			conf.ExpectKPs = append(conf.ExpectKPs, exp)
+		}
+		if len(conf.ExpectKPs) != 0 {
+			var last error
+			for _, exp := range conf.ExpectKPs {
+				if kps, err = tlskp.VerifyKeyPrint(sconn, exp); err != nil {
+					last = err
+				} else {
+					last = nil
+					break
+				}
+			}
+			if last != nil {
 				_ = sconn.Close()
-				return nil, err
+				return nil, last
 			}
 		} else {
 			kps = tlskp.GetKeyPrints(sconn)
 		}
 	}
-	c, err := NewConn(conn)
-	if err != nil {
-		_ = conn.Close()
-		return nil, err
-	}
+	c := NewConn(conn)
 	c.kps = kps
 	return c, nil
 }
 
+var nmdcLineOpts = []lineproto.ConnOption{
+	lineproto.WithWriteBuffer(writeBuffer),
+}
+
+var nmdcConnID uint64
+
 // NewConn runs an NMDC protocol over a specified connection.
-func NewConn(conn net.Conn) (*Conn, error) {
-	c := &Conn{
-		conn: conn,
+func NewConn(conn net.Conn, opts ...nmdc.ConnOption) *Conn {
+	nopt := []nmdc.ConnOption{
+		nmdc.WithLineOpts(nmdcLineOpts...),
 	}
-	c.w = nmdc.NewWriterSize(conn, writeBuffer)
-	c.r = nmdc.NewReader(conn)
-	c.r.OnUnknownEncoding = c.onUnknownEncoding
 	if DefaultFallbackEncoding != nil {
-		c.SetFallbackEncoding(DefaultFallbackEncoding)
+		nopt = append(nopt, nmdc.WithTextEncoding(DefaultFallbackEncoding))
 	}
-	c.r.OnRawMessage(func(cmd, args []byte) (bool, error) {
-		if bytes.Equal(cmd, []byte("ZOn")) {
-			err := c.r.EnableZlib()
-			return false, err
-		}
-		return true, nil
-	})
+	nopt = append(nopt, opts...)
+	c := nmdc.NewConn(conn, nopt...)
 	if Debug {
-		c.w.OnLine(func(line []byte) (bool, error) {
-			log.Printf("-> %q", string(line))
+		id := atomic.AddUint64(&nmdcConnID, 1)
+		c.OnLineR(func(line []byte) (bool, error) {
+			log.Printf("-> (%d) %q", id, string(line))
 			return true, nil
 		})
-		c.r.OnLine(func(line []byte) (bool, error) {
-			log.Printf("<- %q", string(line))
+		c.OnLineW(func(line []byte) (bool, error) {
+			log.Printf("(%d) <- %q", id, string(line))
 			return true, nil
 		})
 	}
-	return c, nil
+	return &Conn{Conn: c}
 }
 
 // Conn is a NMDC protocol connection.
 type Conn struct {
+	*nmdc.Conn
 	kps []string // keyprints, set by TLS
-
-	fallback encoding.Encoding
-
-	conn net.Conn
-
-	wmu    sync.Mutex
-	w      *nmdc.Writer
-	closed bool
-
-	rmu sync.Mutex
-	r   *nmdc.Reader
 }
 
 // GetKeyPrints returns keyprints set by TLS, if any.
 func (c *Conn) GetKeyPrints() []string {
 	return c.kps
-}
-
-func (c *Conn) OnUnmarshalError(fnc func(line []byte, err error) (bool, error)) {
-	c.r.OnUnmarshalError = fnc
-}
-
-func (c *Conn) OnLineR(fnc func(line []byte) (bool, error)) {
-	c.r.OnLine(fnc)
-}
-
-func (c *Conn) OnLineW(fnc func(line []byte) (bool, error)) {
-	c.w.OnLine(fnc)
-}
-
-func (c *Conn) OnRawMessageR(fnc func(cmd, data []byte) (bool, error)) {
-	c.r.OnRawMessage(fnc)
-}
-
-func (c *Conn) OnMessageR(fnc func(m nmdc.Message) (bool, error)) {
-	c.r.OnMessage(fnc)
-}
-
-func (c *Conn) OnMessageW(fnc func(m nmdc.Message) (bool, error)) {
-	c.w.OnMessage(fnc)
-}
-
-func (c *Conn) LocalAddr() net.Addr {
-	return c.conn.LocalAddr()
-}
-
-func (c *Conn) RemoteAddr() net.Addr {
-	return c.conn.RemoteAddr()
-}
-
-func (c *Conn) SetWriteDeadline(t time.Time) error {
-	return c.conn.SetWriteDeadline(t)
-}
-
-func (c *Conn) SetWriteTimeout(dt time.Duration) {
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	if dt <= 0 {
-		c.w.Timeout = nil
-		return
-	}
-	c.w.Timeout = func(enable bool) error {
-		if enable {
-			return c.conn.SetWriteDeadline(time.Now().Add(dt))
-		}
-		return c.conn.SetWriteDeadline(time.Time{})
-	}
-}
-
-func (c *Conn) FallbackEncoding() encoding.Encoding {
-	return c.fallback
-}
-
-func (c *Conn) TextEncoder() *encoding.Encoder {
-	return c.w.Encoder()
-}
-
-func (c *Conn) TextDecoder() *encoding.Decoder {
-	return c.r.Decoder()
-}
-
-func (c *Conn) setEncoding(enc encoding.Encoding, event bool) {
-	if enc != nil {
-		e := enc.NewEncoder()
-		e = encoding.HTMLEscapeUnsupported(e)
-		c.w.SetEncoder(e)
-		if !event {
-			c.r.SetDecoder(enc.NewDecoder())
-		}
-	} else {
-		c.w.SetEncoder(nil)
-		if !event {
-			c.r.SetDecoder(nil)
-		}
-	}
-}
-
-func (c *Conn) SetEncoding(enc encoding.Encoding) {
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	c.setEncoding(enc, false)
-}
-
-func (c *Conn) SetFallbackEncoding(enc encoding.Encoding) {
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	c.fallback = enc
-}
-
-func (c *Conn) ZOn(lvl int) error {
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	return c.w.ZOnLevel(lvl)
-}
-
-// Close closes the connection.
-func (c *Conn) Close() error {
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	if c.closed {
-		return nil
-	}
-	c.closed = true
-	// should not hold any other mutex
-	var last error
-	// first close the writer so it flushes all buffers
-	if err := c.w.Close(); err != nil {
-		last = err
-	}
-	c.rmu.Lock()
-	defer c.rmu.Unlock()
-	// then close the connection so it unblocks the reader
-	_ = c.conn.Close()
-	// finally close the reader
-	if err := c.r.Close(); err != nil {
-		last = err
-	}
-	return last
-}
-
-func (c *Conn) WriteMsg(m ...nmdc.Message) error {
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	return c.w.WriteMsg(m...)
-}
-
-func (c *Conn) WriteLine(data []byte) error {
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	return c.w.WriteLine(data)
-}
-
-func (c *Conn) Flush() error {
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	return c.w.Flush()
-}
-
-func (c *Conn) WriteOneMsg(m nmdc.Message) error {
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	if err := c.w.WriteMsg(m); err != nil {
-		return err
-	}
-	return c.w.Flush()
-}
-
-func (c *Conn) WriteOneLine(data []byte) error {
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	if err := c.w.WriteLine(data); err != nil {
-		return err
-	}
-	return c.w.Flush()
-}
-
-func (c *Conn) onUnknownEncoding(text []byte) (*encoding.Decoder, error) {
-	fallback := c.FallbackEncoding()
-	if fallback == nil {
-		return nil, nil
-	}
-	// try fallback encoding
-	dec := fallback.NewDecoder()
-	str, err := dec.String(string(text))
-	if err != nil || !utf8.ValidString(str) {
-		return nil, nil // use current decoder
-	}
-	// fallback is valid - switch encoding
-	if Debug {
-		log.Println(c.RemoteAddr(), "switched to a fallback encoding")
-	}
-	c.setEncoding(fallback, true)
-	return dec, nil
-}
-
-func (c *Conn) ReadMsgTo(deadline time.Time, m nmdc.Message) error {
-	if m == nil {
-		panic("nil message to decode")
-	}
-	c.rmu.Lock()
-	defer c.rmu.Unlock()
-	if !deadline.IsZero() {
-		c.conn.SetReadDeadline(deadline)
-		defer c.conn.SetReadDeadline(time.Time{})
-	}
-	return c.r.ReadMsgTo(m)
-}
-
-func (c *Conn) ReadMsgToAny(deadline time.Time, m ...nmdc.Message) (nmdc.Message, error) {
-	if len(m) == 0 {
-		panic("no messages to decode")
-	}
-	c.rmu.Lock()
-	defer c.rmu.Unlock()
-	if !deadline.IsZero() {
-		c.conn.SetReadDeadline(deadline)
-		defer c.conn.SetReadDeadline(time.Time{})
-	}
-	return c.r.ReadMsgToAny(m...)
-}
-
-func (c *Conn) ReadMsg(deadline time.Time) (nmdc.Message, error) {
-	c.rmu.Lock()
-	defer c.rmu.Unlock()
-	if !deadline.IsZero() {
-		c.conn.SetReadDeadline(deadline)
-		defer c.conn.SetReadDeadline(time.Time{})
-	}
-	return c.r.ReadMsg()
 }

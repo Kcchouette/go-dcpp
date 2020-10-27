@@ -4,14 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/direct-connect/go-dc/nmdc"
 )
 
-func (c *Conn) SendClientHandshake(deadline time.Time, ext ...string) (*nmdc.Lock, error) {
+func (c *Conn) SendClientHandshake(ext ...string) (*nmdc.Lock, error) {
 	var lock nmdc.Lock
-	err := c.ReadMsgTo(deadline, &lock)
+	err := c.ReadMessageTo(&lock)
 	if err == io.EOF {
 		return nil, io.ErrUnexpectedEOF
 	} else if err != nil {
@@ -21,60 +20,75 @@ func (c *Conn) SendClientHandshake(deadline time.Time, ext ...string) (*nmdc.Loc
 		// TODO: support legacy protocol, if we care
 		return nil, errors.New("legacy protocol is not supported")
 	}
-	err = c.WriteMsg(&nmdc.Supports{Ext: ext})
+	bw, err := c.BeginWrite()
 	if err != nil {
 		return nil, err
 	}
-	err = c.WriteMsg(lock.Key())
+	defer bw.Close()
+	err = bw.WriteMsg(&nmdc.Supports{Ext: ext})
 	if err != nil {
 		return nil, err
 	}
-	err = c.Flush()
+	err = bw.WriteMsg(lock.Key())
+	if err != nil {
+		return nil, err
+	}
+	err = bw.Flush()
 	if err != nil {
 		return nil, err
 	}
 	return &lock, nil
 }
 
-func (c *Conn) sendClientInfo(deadline time.Time, info *nmdc.MyINFO) error {
-	err := c.WriteMsg(&nmdc.Version{Vers: "1,0091"})
+func (c *Conn) sendClientInfo(bw *nmdc.BatchWriter, info *nmdc.MyINFO) error {
+	err := bw.WriteMsg(&nmdc.Version{Vers: "1,0091"})
 	if err != nil {
 		return err
 	}
-	err = c.WriteMsg(&nmdc.GetNickList{})
+	err = bw.WriteMsg(&nmdc.GetNickList{})
 	if err != nil {
 		return err
 	}
-	err = c.WriteMsg(info)
+	err = bw.WriteMsg(info)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (c *Conn) SendClientInfo(deadline time.Time, info *nmdc.MyINFO) error {
-	err := c.sendClientInfo(deadline, info)
+func (c *Conn) SendClientInfo(info *nmdc.MyINFO) error {
+	bw, err := c.BeginWrite()
 	if err != nil {
 		return err
 	}
-	return c.Flush()
+	defer bw.Close()
+	err = c.sendClientInfo(bw, info)
+	if err != nil {
+		return err
+	}
+	return bw.Flush()
 }
 
-func (c *Conn) SendPingerInfo(deadline time.Time, info *nmdc.MyINFO) error {
-	err := c.sendClientInfo(deadline, info)
+func (c *Conn) SendPingerInfo(info *nmdc.MyINFO) error {
+	bw, err := c.BeginWrite()
 	if err != nil {
 		return err
 	}
-	err = c.WriteMsg(&nmdc.BotINFO{String: nmdc.String(info.Name)})
+	defer bw.Close()
+	err = c.sendClientInfo(bw, info)
 	if err != nil {
 		return err
 	}
-	return c.Flush()
+	err = bw.WriteMsg(&nmdc.BotINFO{String: nmdc.String(info.Name)})
+	if err != nil {
+		return err
+	}
+	return bw.Flush()
 }
 
-func (c *Conn) ReadValidateNick(deadline time.Time) (*nmdc.ValidateNick, error) {
+func (c *Conn) ReadValidateNick() (*nmdc.ValidateNick, error) {
 	var nick nmdc.ValidateNick
-	err := c.ReadMsgTo(deadline, &nick)
+	err := c.ReadMessageTo(&nick)
 	if err != nil {
 		return nil, fmt.Errorf("expected validate: %v", err)
 	}

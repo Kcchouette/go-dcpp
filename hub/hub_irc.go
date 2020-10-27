@@ -34,7 +34,7 @@ func (h *Hub) ServeIRC(conn net.Conn, cinfo *ConnInfo) error {
 		cinfo = &ConnInfo{Local: conn.LocalAddr(), Remote: conn.RemoteAddr()}
 	}
 
-	h.Logf("%s: using IRC", conn.RemoteAddr())
+	h.Debugf("%s: using IRC", conn.RemoteAddr())
 	peer, err := h.ircHandshake(conn, cinfo)
 	if err != nil {
 		return err
@@ -42,7 +42,7 @@ func (h *Hub) ServeIRC(conn net.Conn, cinfo *ConnInfo) error {
 	defer peer.Close()
 
 	if !h.callOnJoined(peer) {
-		return nil // TODO: eny errors?
+		return nil // TODO: any errors?
 	}
 
 	for {

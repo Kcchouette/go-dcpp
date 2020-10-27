@@ -85,10 +85,11 @@ type timeoutErr interface {
 }
 
 type PingConfig struct {
-	Name  string
-	Share uint64
-	Slots int
-	Hubs  int
+	Name    string
+	Share   uint64
+	Slots   int
+	Hubs    int
+	DialOpt []DialOption
 }
 
 func Ping(ctx context.Context, addr string, conf PingConfig) (_ *HubInfo, gerr error) {
@@ -107,10 +108,12 @@ func Ping(ctx context.Context, addr string, conf PingConfig) (_ *HubInfo, gerr e
 	}
 	defer c.Close()
 
-	c.r.OnRawMessage(func(cmd, args []byte) (bool, error) {
+	c.OnRawMessageR(func(cmd, args []byte) (bool, error) {
 		if bytes.Equal(cmd, []byte("HubINFO")) {
 			hubInfo = append([]byte{}, args...)
 		} else if bytes.Equal(cmd, []byte("UserCommand")) {
+			return false, nil
+		} else if len(cmd) == 0 && bytes.Contains(args, []byte("redirected to")) {
 			return false, nil
 		}
 		return true, nil
@@ -121,11 +124,11 @@ func Ping(ctx context.Context, addr string, conf PingConfig) (_ *HubInfo, gerr e
 	if !ok {
 		deadline = time.Now().Add(time.Second * 10)
 	}
-	if err = c.conn.SetDeadline(deadline); err != nil {
+	if err = c.SetReadDeadline(deadline); err != nil {
 		return nil, err
 	}
 
-	lock, err := c.SendClientHandshake(time.Time{},
+	lock, err := c.SendClientHandshake(
 		// dump most extensions we know to probe the hub for support of them
 		nmdc.ExtNoHello, nmdc.ExtNoGetINFO, nmdc.ExtTLS, nmdc.ExtUserIP2,
 		nmdc.ExtUserCommand, nmdc.ExtTTHSearch, nmdc.ExtZPipe0, nmdc.ExtADCGet,
@@ -143,20 +146,34 @@ func Ping(ctx context.Context, addr string, conf PingConfig) (_ *HubInfo, gerr e
 		//FeaDHT0, // some hubs ask users to disable it and drops the connection
 	)
 	if e, ok := err.(*nmdc.ErrUnexpectedCommand); ok {
-		// chat message: it may be a ban
-		if e.Received.Typ == "" {
+		switch e.Received.Typ {
+		case "": // chat message: it may be a ban
 			var m nmdc.ChatMessage
-			_ = m.UnmarshalNMDC(nil, e.Received.Data)
-			if strings.Contains(m.Text, "Banned by") {
-				reason := ""
-				if i := strings.Index(m.Text, "Reason: "); i > 0 {
-					reason = m.Text[i+8:]
-					if i := strings.IndexByte(reason, '\n'); i > 0 {
-						reason = reason[:i]
+			err := m.UnmarshalNMDC(nil, e.Received.Data)
+			if err == nil {
+				if strings.Contains(m.Text, "Banned by") {
+					reason := ""
+					if i := strings.Index(m.Text, "Reason: "); i > 0 {
+						reason = m.Text[i+8:]
+						if i := strings.IndexByte(reason, '\n'); i > 0 {
+							reason = reason[:i]
+						}
+						reason = strings.TrimSpace(reason)
 					}
-					reason = strings.TrimSpace(reason)
+					return nil, &ErrBanned{Reason: reason}
 				}
-				return nil, &ErrBanned{Reason: reason}
+				return nil, fmt.Errorf("nmdc: %s", m.Text)
+			}
+		case "ForceMove":
+			var m nmdc.ForceMove
+			err := m.UnmarshalNMDC(nil, e.Received.Data)
+			if err == nil {
+				// redirect
+				return &HubInfo{
+					Addr:      addr,
+					KeyPrints: c.GetKeyPrints(),
+					Redirect:  m.Address,
+				}, nil
 			}
 		}
 	}
@@ -164,7 +181,7 @@ func Ping(ctx context.Context, addr string, conf PingConfig) (_ *HubInfo, gerr e
 		return nil, err
 	}
 
-	if err = c.conn.SetDeadline(deadline); err != nil {
+	if err = c.SetReadDeadline(deadline); err != nil {
 		return nil, err
 	}
 
@@ -253,8 +270,10 @@ func Ping(ctx context.Context, addr string, conf PingConfig) (_ *HubInfo, gerr e
 			return
 		}
 
+		ec := nmdc.DefaultEncoding().Clone()
+		ec.SetTextEncoding(enc)
 		var msg2 nmdc.HubINFO
-		err = msg2.UnmarshalNMDC(enc.NewDecoder(), hubInfo)
+		err = msg2.UnmarshalNMDC(ec, hubInfo)
 		if err != nil {
 			setInfo(msg, "")
 			return
@@ -263,7 +282,7 @@ func Ping(ctx context.Context, addr string, conf PingConfig) (_ *HubInfo, gerr e
 			code = c
 		}
 		setInfo(&msg2, code)
-		c.SetEncoding(enc)
+		c.SetEncoding(ec)
 	}
 
 	var (
@@ -273,7 +292,7 @@ func Ping(ctx context.Context, addr string, conf PingConfig) (_ *HubInfo, gerr e
 		poweredBy   bool
 	)
 	for {
-		msg, err := c.ReadMsg(time.Time{})
+		msg, err := c.ReadMessage()
 		if err == io.EOF {
 			if listStarted || listEnd {
 				return &hub, nil
@@ -326,11 +345,7 @@ func Ping(ctx context.Context, addr string, conf PingConfig) (_ *HubInfo, gerr e
 			}
 		case *nmdc.Supports:
 			hub.Ext = msg.Ext
-			err = c.WriteMsg(&nmdc.ValidateNick{Name: nmdc.Name(conf.Name)})
-			if err != nil {
-				return nil, err
-			}
-			err = c.Flush()
+			err = c.WriteMessage(&nmdc.ValidateNick{Name: nmdc.Name(conf.Name)})
 			if err != nil {
 				return nil, err
 			}
@@ -346,7 +361,7 @@ func Ping(ctx context.Context, addr string, conf PingConfig) (_ *HubInfo, gerr e
 			if string(msg.Name) != conf.Name {
 				return &hub, fmt.Errorf("unexpected name in hello: %q", msg.Name)
 			}
-			err = c.SendPingerInfo(time.Time{}, &nmdc.MyINFO{
+			err = c.SendPingerInfo(&nmdc.MyINFO{
 				Name: conf.Name,
 				Client: types.Software{
 					Name:    version.Name,

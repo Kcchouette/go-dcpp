@@ -77,7 +77,10 @@ func hubHanshake(conn *nmdc.Conn, conf *Config) (nmdcp.Extensions, *HubInfo, err
 	}
 	ext = append(ext, conf.Ext...)
 
-	_, err := conn.SendClientHandshake(deadline, ext...)
+	if err := conn.SetReadDeadline(deadline); err != nil {
+		return nil, nil, err
+	}
+	_, err := conn.SendClientHandshake(ext...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -94,7 +97,7 @@ func hubHanshake(conn *nmdc.Conn, conf *Config) (nmdcp.Extensions, *HubInfo, err
 
 handshake:
 	for {
-		msg, err := conn.ReadMsg(deadline)
+		msg, err := conn.ReadMessage()
 		if err == io.EOF {
 			return nil, nil, io.ErrUnexpectedEOF
 		} else if err != nil {
@@ -112,7 +115,7 @@ handshake:
 				// TODO: support hello as well
 				return nil, nil, fmt.Errorf("no hello is not supported: %v", msg.Ext)
 			}
-			err = conn.WriteOneMsg(&nmdcp.ValidateNick{Name: nmdcp.Name(conf.Name)})
+			err = conn.WriteMessage(&nmdcp.ValidateNick{Name: nmdcp.Name(conf.Name)})
 			if err != nil {
 				return nil, nil, err
 			}
@@ -129,7 +132,7 @@ handshake:
 		}
 	}
 
-	err = conn.SendClientInfo(deadline, &nmdcp.MyINFO{
+	err = conn.SendClientInfo(&nmdcp.MyINFO{
 		Name: conf.Name,
 		Client: types.Software{
 			Name:    version.Name,
@@ -152,12 +155,17 @@ handshake:
 
 func initConn(c *Conn) error {
 	deadline := time.Now().Add(time.Second * 30)
+	if err := c.conn.SetReadDeadline(deadline); err != nil {
+		return err
+	}
 	for {
-		msg, err := c.conn.ReadMsg(deadline)
+		msg, err := c.conn.ReadMessage()
 		if err != nil {
 			return err
 		}
 		switch msg := msg.(type) {
+		case *nmdcp.ChatMessage:
+			// skip
 		case *nmdcp.HubName:
 			c.hub.Name = string(msg.String)
 		case *nmdcp.HubTopic:
@@ -165,6 +173,9 @@ func initConn(c *Conn) error {
 		case *nmdcp.MyINFO:
 			if msg.Name == c.user.Name {
 				c.user = *msg
+				if nmdc.Debug {
+					log.Printf("%q - user list complete", msg.Name)
+				}
 				return nil
 			}
 			if _, ok := c.peers.byName[msg.Name]; ok {
@@ -195,6 +206,8 @@ type Conn struct {
 		byName map[string]*Peer
 	}
 	on struct {
+		sync.RWMutex
+		any       func(m nmdcp.Message) (bool, error)
 		chat      func(m *nmdcp.ChatMessage) error
 		unhandled func(m nmdcp.Message) error
 	}
@@ -220,16 +233,26 @@ func (c *Conn) Close() error {
 	return err
 }
 
+func (c *Conn) OnAny(fnc func(m nmdcp.Message) (bool, error)) {
+	c.on.Lock()
+	c.on.any = fnc
+	c.on.Unlock()
+}
+
 func (c *Conn) OnChatMessage(fnc func(m *nmdcp.ChatMessage) error) {
+	c.on.Lock()
 	c.on.chat = fnc
+	c.on.Unlock()
 }
 
 func (c *Conn) OnUnhandled(fnc func(m nmdcp.Message) error) {
+	c.on.Lock()
 	c.on.unhandled = fnc
+	c.on.Unlock()
 }
 
 func (c *Conn) OnlinePeers() []*Peer {
-	c.peers.RUnlock()
+	c.peers.RLock()
 	defer c.peers.RUnlock()
 	list := make([]*Peer, 0, len(c.peers.byName))
 	for _, peer := range c.peers.byName {
@@ -242,20 +265,56 @@ func (c *Conn) SendChatMsg(msg string) error {
 	c.imu.RLock()
 	name := c.user.Name
 	c.imu.RUnlock()
-	return c.conn.WriteOneMsg(&nmdcp.ChatMessage{
+	return c.conn.WriteMessage(&nmdcp.ChatMessage{
 		Name: name, Text: msg,
 	})
+}
+
+func (c *Conn) onAny(m nmdcp.Message) (bool, error) {
+	c.on.RLock()
+	fnc := c.on.any
+	c.on.RUnlock()
+	if fnc == nil {
+		return true, nil
+	}
+	return fnc(m)
+}
+
+func (c *Conn) onChat(m *nmdcp.ChatMessage) error {
+	c.on.RLock()
+	fnc := c.on.chat
+	c.on.RUnlock()
+	if fnc == nil {
+		return nil
+	}
+	return fnc(m)
+}
+
+func (c *Conn) onUnhandled(m nmdcp.Message) error {
+	c.on.RLock()
+	fnc := c.on.unhandled
+	c.on.RUnlock()
+	if fnc == nil {
+		return nil
+	}
+	return fnc(m)
 }
 
 func (c *Conn) readLoop() {
 	defer close(c.closed)
 	for {
-		msg, err := c.conn.ReadMsg(time.Time{})
+		msg, err := c.conn.ReadMessage()
 		if err == io.EOF || err == io.ErrClosedPipe {
 			return
 		} else if err != nil {
 			log.Println("read msg:", err)
 			return
+		}
+		if handle, err := c.onAny(msg); err != nil {
+			log.Println("read msg:", err)
+			return
+		} else if !handle {
+			continue
 		}
 		switch msg := msg.(type) {
 		case *nmdcp.HubName:
@@ -266,12 +325,35 @@ func (c *Conn) readLoop() {
 			c.imu.Lock()
 			c.hub.Topic = msg.Text
 			c.imu.Unlock()
+		case *nmdcp.MyINFO:
+			if msg.Name == c.user.Name {
+				continue
+			}
+			c.peers.Lock()
+			peer := c.peers.byName[msg.Name]
+			if peer == nil {
+				peer = &Peer{hub: c, info: *msg}
+				c.peers.byName[msg.Name] = peer
+				c.peers.Unlock()
+			} else {
+				c.peers.Unlock()
+
+				peer.mu.Lock()
+				peer.info = *msg
+				peer.mu.Unlock()
+			}
+		case *nmdcp.Quit:
+			if string(msg.Name) == c.user.Name {
+				log.Println("quit received")
+				return
+			}
+			c.peers.Lock()
+			delete(c.peers.byName, string(msg.Name))
+			c.peers.Unlock()
 		case *nmdcp.ChatMessage:
-			if c.on.chat != nil {
-				if err = c.on.chat(msg); err != nil {
-					log.Println("chat msg:", err)
-					return
-				}
+			if err := c.onChat(msg); err != nil {
+				log.Println("chat msg:", err)
+				return
 			}
 		case *nmdcp.OpList:
 			c.peers.RLock()
@@ -303,11 +385,9 @@ func (c *Conn) readLoop() {
 			}
 			c.peers.RUnlock()
 		default:
-			if c.on.unhandled != nil {
-				if err = c.on.unhandled(msg); err != nil {
-					log.Println("unhandled msg:", err)
-					return
-				}
+			if err := c.onUnhandled(msg); err != nil {
+				log.Println("unhandled msg:", err)
+				return
 			}
 		}
 	}

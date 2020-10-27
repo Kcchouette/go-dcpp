@@ -21,6 +21,18 @@ func (b *Bool) Set(v bool) {
 	}
 }
 
+func (b *Bool) CompareAndSwap(old, new bool) bool {
+	oldi := uint32(0)
+	if old {
+		oldi = 1
+	}
+	newi := uint32(0)
+	if new {
+		newi = 1
+	}
+	return atomic.CompareAndSwapUint32(&b.v, oldi, newi)
+}
+
 type String struct {
 	v atomic.Value
 }

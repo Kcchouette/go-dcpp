@@ -213,8 +213,8 @@ func (h *Hub) validateUserName(name string) error {
 	}) >= 0 {
 		return errNameInvalidChars
 	}
-	if h.fallback != nil {
-		_, err := h.fallback.NewEncoder().String(name)
+	if h.fallbackEnc != nil {
+		_, err := h.fallbackEnc.String(name)
 		if err != nil {
 			return fmt.Errorf("invalid name: %v (%q)", err, name)
 		}

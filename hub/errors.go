@@ -15,6 +15,7 @@ var (
 	errNickTaken       = errors.New("nick taken")
 	errConnInsecure    = errors.New("connection is insecure")
 	errCmdInvalidArg   = errors.New("invalid argument")
+	errWrongPass       = errors.New("wrong password")
 	errServerIsPrivate = errors.New("server is private")
 )
 

@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 
+	nmdcp "github.com/direct-connect/go-dc/nmdc"
 	"github.com/direct-connect/go-dcpp/internal/safe"
 )
 
@@ -75,7 +76,7 @@ type Peer interface {
 	// RevConnectTo sends a reverse connection request to this peer.
 	RevConnectTo(peer Peer, token string, secure bool) error
 
-	// Search sends a search request to this peer.
+	// Search sends a search request to this peer. Results should be delivered to out.
 	Search(ctx context.Context, req SearchRequest, out Search) error
 
 	// Redirect the peer to a different hub or address.
@@ -89,25 +90,25 @@ type PeerTopic interface {
 type PeersJoinEvent struct {
 	Peers []Peer
 
-	nmdcInfos nmdcRaw
-	nmdcOps   nmdcRaw
-	nmdcBots  nmdcRaw
-	nmdcIPs   nmdcRaw
+	nmdcInfos *nmdcp.Buffer
+	nmdcOps   *nmdcp.Buffer
+	nmdcBots  *nmdcp.Buffer
+	nmdcIPs   *nmdcp.Buffer
 }
 
 type PeersUpdateEvent struct {
 	Peers []Peer
 
-	nmdcInfos nmdcRaw
-	nmdcOps   nmdcRaw
-	nmdcBots  nmdcRaw
-	nmdcIPs   nmdcRaw
+	nmdcInfos *nmdcp.Buffer
+	nmdcOps   *nmdcp.Buffer
+	nmdcBots  *nmdcp.Buffer
+	nmdcIPs   *nmdcp.Buffer
 }
 
 type PeersLeaveEvent struct {
 	Peers []Peer
 
-	nmdcQuit nmdcRaw
+	nmdcQuit *nmdcp.Buffer
 }
 
 func (h *Hub) newBasePeer(p *BasePeer, c *ConnInfo) {

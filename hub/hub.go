@@ -10,9 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/text/encoding"
-	"golang.org/x/text/encoding/htmlindex"
-
+	"github.com/direct-connect/go-dc/nmdc"
 	"github.com/direct-connect/go-dc/types"
 	"github.com/direct-connect/go-dcpp/internal/safe"
 	"github.com/direct-connect/go-dcpp/version"
@@ -71,11 +69,12 @@ func NewHub(conf Config) (*Hub, error) {
 	h.setZlibLevel(-1)
 	h.setGlobalChatEnabled(true) // TODO(dennwc): read from the config
 	if conf.FallbackEncoding != "" {
-		enc, err := htmlindex.Get(conf.FallbackEncoding)
+		enc, err := nmdc.TextEncodingByName(conf.FallbackEncoding)
 		if err != nil {
 			return nil, err
 		}
-		h.fallback = enc
+		h.nmdcOpts = append(h.nmdcOpts, nmdc.WithFallbackTextEncoding(enc))
+		h.fallbackEnc = enc.NewEncoder()
 	}
 	h.peers.reserved = make(map[nameKey]struct{})
 	h.peers.byName = make(map[nameKey]Peer)
@@ -136,7 +135,8 @@ type Hub struct {
 	lastSID uint32
 	hubUser *Bot
 
-	fallback encoding.Encoding
+	nmdcOpts    []nmdc.ConnOption
+	fallbackEnc *nmdc.TextEncoder // used to verify names
 
 	sampler sampler
 
@@ -378,7 +378,7 @@ func (h *Hub) setMOTD(motd string) {
 
 func (h *Hub) poweredBy() string {
 	soft := h.getSoft()
-	uptime := h.Uptime().String()
+	uptime := h.Uptime().String() // TODO: humanize
 	if i := strings.LastIndexByte(uptime, '.'); i > 0 {
 		uptime = uptime[:i] + "s"
 	}
