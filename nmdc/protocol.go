@@ -13,7 +13,7 @@ func (c *Conn) SendClientHandshake(deadline time.Time, ext ...string) (*nmdc.Loc
 	var lock nmdc.Lock
 	err := c.ReadMsgTo(deadline, &lock)
 	if err == io.EOF {
-		return nil, io.ErrUnexpectedEOF
+		return nil, fmt.Errorf("hub closed connection before sending $Lock: %w", io.EOF)
 	} else if err != nil {
 		return nil, err
 	}
