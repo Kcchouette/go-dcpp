@@ -166,7 +166,7 @@ func Ping(ctx context.Context, addr string, conf PingConfig) (*PingHubInfo, erro
 	for {
 		pck, err := c.ReadPacketRaw(deadline)
 		if err == io.EOF {
-			return &hub, io.ErrUnexpectedEOF
+			return &hub, fmt.Errorf("hub closed connection unexpectedly: %w", io.EOF)
 		} else if err != nil {
 			return &hub, err
 		}
