@@ -619,12 +619,10 @@ func (h *Hub) cmdRedirectAll(p Peer, args string) error {
 			continue
 		}
 		p2 := p2
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_ = p2.Redirect(addr)
 			_ = p2.Close()
-		}()
+		})
 	}
 	go func() {
 		wg.Wait()

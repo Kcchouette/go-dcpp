@@ -74,10 +74,8 @@ func TestHubEnterNMDC(t *testing.T) {
 	start := time.Now()
 	const count = 5000
 	for i := range count {
-		wg.Add(2)
 		hc, cc := newPipe(i)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			defer hc.Close()
 
 			err := h.ServeNMDC(hc, nil)
@@ -87,9 +85,8 @@ func TestHubEnterNMDC(t *testing.T) {
 				setError(err)
 				return
 			}
-		}()
-		go func() {
-			defer wg.Done()
+		})
+		wg.Go(func() {
 			defer cc.Close()
 
 			c, err := nmdc.NewConn(cc)

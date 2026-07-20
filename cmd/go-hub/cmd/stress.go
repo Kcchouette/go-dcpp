@@ -99,16 +99,14 @@ func init() {
 		done := make(chan struct{})
 
 		for range *fNum {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				if *fAll {
 					connect(done)
 					return
 				}
 				for connect(done) {
 				}
-			}()
+			})
 		}
 		const dt = time.Second / 2
 		var (

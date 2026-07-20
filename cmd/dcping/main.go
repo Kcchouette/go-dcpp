@@ -322,9 +322,7 @@ func init() {
 		jobs := make(chan string, *pingNum)
 		errc := make(chan error, 1)
 		for range *pingNum {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				for addr := range jobs {
 					if err := pingOne(addr); err != nil {
 						select {
@@ -333,7 +331,7 @@ func init() {
 						}
 					}
 				}
-			}()
+			})
 		}
 
 		for _, addr := range args {
