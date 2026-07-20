@@ -2,10 +2,11 @@ package hub
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
-	"math/rand"
+	mrand "math/rand/v2"
 	"net"
 	"strconv"
 	"strings"
@@ -1261,7 +1262,7 @@ func (p *adcPeer) gcTokens() {
 }
 
 func (p *adcPeer) searchToken(out Search) string {
-	token := strconv.FormatUint(rand.Uint64(), 16)
+	token := strconv.FormatUint(mrand.Uint64(), 16)
 	p.search.Lock()
 	defer p.search.Unlock()
 	if p.search.tokens == nil {

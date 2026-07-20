@@ -4,7 +4,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"log"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"strconv"
 	"sync"
@@ -50,7 +50,7 @@ func init() {
 		defer cw.Flush()
 
 		sleep := func(done <-chan struct{}) bool {
-			dt := time.Duration(rand.Int63n(int64(time.Second * 5)))
+			dt := time.Duration(rand.Int64N(int64(time.Second * 5)))
 			t := time.NewTimer(dt)
 			defer t.Stop()
 			select {
@@ -85,7 +85,7 @@ func init() {
 				return false
 			}
 
-			for rand.Intn(10) < 5 {
+			for rand.IntN(10) < 5 {
 				if *fMsg {
 					_ = c.SendChatMsg(strconv.FormatUint(rand.Uint64(), 16))
 				}
