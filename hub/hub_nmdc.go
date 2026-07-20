@@ -993,9 +993,7 @@ func (p *nmdcPeer) writer(timeout time.Duration) {
 
 	var buf2 []nmdcp.Message
 	resetBuf := func(buf []nmdcp.Message) {
-		for i := range buf {
-			buf[i] = nil
-		}
+		clear(buf)
 		buf2 = buf[:0]
 	}
 	logErr := func(err error) {
