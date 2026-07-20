@@ -963,10 +963,7 @@ func (h *Hub) ListCommands(u *User) []*Command {
 	}
 	sort.Slice(command, func(i, j int) bool {
 		a, b := command[i], command[j]
-		l := len(a.Menu)
-		if len(a.Menu) > len(b.Menu) {
-			l = len(b.Menu)
-		}
+		l := min(len(a.Menu), len(b.Menu))
 		for n := 0; n <= l; n++ {
 			if a.Menu[n] != b.Menu[n] {
 				return a.Menu[n] < b.Menu[n]
