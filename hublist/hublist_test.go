@@ -53,7 +53,7 @@ func TestGenerate(t *testing.T) {
 		case "string":
 			f.WriteString("string")
 		default:
-			f.WriteString("interface{}")
+			f.WriteString("any")
 		}
 		f.WriteString(" `xml:\"" + col[0] + ",attr\"`\n")
 	}

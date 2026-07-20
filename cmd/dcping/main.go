@@ -152,7 +152,7 @@ func init() {
 		var (
 			mu    sync.Mutex
 			w     io.Writer = os.Stdout
-			enc   func(interface{}) error
+			enc   func(any) error
 			flush func() error
 		)
 		switch *pingOut {
@@ -170,7 +170,7 @@ func init() {
 			if *pingOut == "xml-line" {
 				e.Headers(false)
 			}
-			enc = func(o interface{}) error {
+			enc = func(o any) error {
 				return e.WriteHub(o.(hublist.Hub))
 			}
 			flush = e.Close
@@ -178,7 +178,7 @@ func init() {
 			return fmt.Errorf("unsupported format: %q", *pingOut)
 		}
 		cenc := enc
-		enc = func(o interface{}) error {
+		enc = func(o any) error {
 			mu.Lock()
 			defer mu.Unlock()
 			return cenc(o)

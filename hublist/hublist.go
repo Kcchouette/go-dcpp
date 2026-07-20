@@ -63,7 +63,7 @@ func (s *Size) UnmarshalText(text []byte) error {
 	return nil
 }
 
-func getRaw(ctx context.Context, url string, dst interface{}) error {
+func getRaw(ctx context.Context, url string, dst any) error {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err

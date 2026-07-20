@@ -48,7 +48,7 @@ func TestTEGenerate(t *testing.T) {
 		case "string":
 			f.WriteString("string")
 		default:
-			f.WriteString("interface{}")
+			f.WriteString("any")
 		}
 		f.WriteString(" `json:\"" + col[0] + "\"`\n")
 	}

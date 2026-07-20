@@ -14,7 +14,7 @@ var TELists = []string{
 	"http://www.te-home.net/",
 }
 
-func teGetRaw(ctx context.Context, addr string, dst interface{}) error {
+func teGetRaw(ctx context.Context, addr string, dst any) error {
 	if !strings.Contains(addr, "?") {
 		addr += `?do=hublist&get=hublist.json`
 	}

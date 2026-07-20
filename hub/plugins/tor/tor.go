@@ -6,7 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
+
 	"net"
 	"os"
 	"path/filepath"
@@ -67,7 +67,7 @@ func (p *plugin) startTor() error {
 	}
 	torrc := filepath.Join(torDir, "torrc")
 	if _, err := os.Stat(torrc); os.IsNotExist(err) {
-		if err = ioutil.WriteFile(torrc, nil, 0644); err != nil {
+		if err = os.WriteFile(torrc, nil, 0644); err != nil {
 			return fmt.Errorf("tor: failed to create torrc: %v", err)
 		}
 	} else if err != nil {
@@ -93,7 +93,7 @@ func (p *plugin) listenAndServe() error {
 
 	keyFile := filepath.Join(p.path, torDir, keyFile)
 	var key crypto.PrivateKey
-	if data, err := ioutil.ReadFile(keyFile); err == nil {
+	if data, err := os.ReadFile(keyFile); err == nil {
 		k, err := x509.ParsePKCS1PrivateKey(data)
 		if err != nil {
 			return err
@@ -116,7 +116,7 @@ func (p *plugin) listenAndServe() error {
 	if key == nil {
 		if k, ok := onion.Key.(*rsa.PrivateKey); ok {
 			data := x509.MarshalPKCS1PrivateKey(k)
-			err := ioutil.WriteFile(keyFile, data, 0600)
+			err := os.WriteFile(keyFile, data, 0600)
 			if err != nil {
 				return err
 			}

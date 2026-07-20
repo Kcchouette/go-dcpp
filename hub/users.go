@@ -146,7 +146,7 @@ type UserDatabase interface {
 	UpdateUser(name string, fnc func(u *UserRecord) (bool, error)) error
 }
 
-type Map map[string]interface{}
+type Map map[string]any
 
 func (m Map) Clone() Map {
 	m2 := make(Map, len(m))

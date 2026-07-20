@@ -26,7 +26,7 @@ type Command struct {
 	Short   string
 	Long    string
 	Require string
-	Func    interface{}
+	Func    any
 	run     func(p Peer, args string)
 	opt     cmdOptions
 }
@@ -400,7 +400,7 @@ func (h *Hub) cmdRooms(p Peer, args string) error {
 	return nil
 }
 
-func (h *Hub) cmdConfigEcho(p Peer, key string, val interface{}) {
+func (h *Hub) cmdConfigEcho(p Peer, key string, val any) {
 	buf := bytes.NewBuffer(nil)
 	buf.WriteString(key)
 	buf.WriteString(" = ")
@@ -694,11 +694,11 @@ func (h *Hub) cmdOutput(peer Peer, out string) {
 	h.cmdOutputM(peer, Message{Text: out})
 }
 
-func (h *Hub) cmdOutputf(peer Peer, format string, args ...interface{}) {
+func (h *Hub) cmdOutputf(peer Peer, format string, args ...any) {
 	h.cmdOutput(peer, fmt.Sprintf(format, args...))
 }
 
-func (h *Hub) cmdOutputJSON(peer Peer, out interface{}) {
+func (h *Hub) cmdOutputJSON(peer Peer, out any) {
 	data, _ := json.MarshalIndent(out, "", "  ")
 	h.cmdOutput(peer, string(data))
 }
@@ -798,7 +798,7 @@ func (h *Hub) cmdParsePeer(text string) (Peer, string, error) {
 	return peer, rest, nil
 }
 
-func (h *Hub) toCommandFunc(o interface{}, opt *cmdOptions) CommandFunc {
+func (h *Hub) toCommandFunc(o any, opt *cmdOptions) CommandFunc {
 	if fnc, ok := o.(CommandFunc); ok {
 		return fnc
 	}
@@ -854,7 +854,7 @@ func (h *Hub) toCommandFunc(o interface{}, opt *cmdOptions) CommandFunc {
 				continue
 			}
 			var (
-				v   interface{}
+				v   any
 				err error
 			)
 			switch t {
