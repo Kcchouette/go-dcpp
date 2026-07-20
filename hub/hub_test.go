@@ -73,8 +73,7 @@ func TestHubEnterNMDC(t *testing.T) {
 	const delay = time.Second
 	start := time.Now()
 	const count = 5000
-	for i := 0; i < count; i++ {
-		i := i
+	for i := range count {
 		wg.Add(2)
 		hc, cc := newPipe(i)
 		go func() {

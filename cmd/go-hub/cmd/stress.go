@@ -98,7 +98,7 @@ func init() {
 
 		done := make(chan struct{})
 
-		for i := 0; i < *fNum; i++ {
+		for range *fNum {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -115,7 +115,7 @@ func init() {
 			oldSuccess int32
 			oldErrors  int32
 		)
-		for i := 0; i < int(*fDur/dt); i++ {
+		for range int(*fDur / dt) {
 			time.Sleep(dt)
 			sn, en := atomic.LoadInt32(&success), atomic.LoadInt32(&errors)
 			dsn, den := sn-oldSuccess, en-oldErrors

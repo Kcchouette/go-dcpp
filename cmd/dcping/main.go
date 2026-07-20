@@ -321,7 +321,7 @@ func init() {
 		var wg sync.WaitGroup
 		jobs := make(chan string, *pingNum)
 		errc := make(chan error, 1)
-		for i := 0; i < *pingNum; i++ {
+		for range *pingNum {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()

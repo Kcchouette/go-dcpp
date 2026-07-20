@@ -817,7 +817,7 @@ func (h *Hub) toCommandFunc(o any, opt *cmdOptions) CommandFunc {
 	argc := rt.NumIn()
 	hasRaw := false
 	argt := make([]reflect.Type, 0, argc)
-	for i := 0; i < argc; i++ {
+	for i := range argc {
 		t := rt.In(i)
 		if selfInd < 0 && t == reflPeer {
 			selfInd = i
