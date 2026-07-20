@@ -216,7 +216,7 @@ func (h *Hub) validateUserName(name string) error {
 	if h.fallback != nil {
 		_, err := h.fallback.NewEncoder().String(name)
 		if err != nil {
-			return fmt.Errorf("invalid name: %v (%q)", err, name)
+			return fmt.Errorf("invalid name: %w (%q)", err, name)
 		}
 	}
 	return nil

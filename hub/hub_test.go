@@ -83,7 +83,7 @@ func TestHubEnterNMDC(t *testing.T) {
 
 			err := h.ServeNMDC(hc, nil)
 			if err != nil && err != io.ErrClosedPipe {
-				err = fmt.Errorf("hub(%d): %v", i, err)
+				err = fmt.Errorf("hub(%d): %w", i, err)
 				log.Println(err)
 				setError(err)
 				return
@@ -104,7 +104,7 @@ func TestHubEnterNMDC(t *testing.T) {
 				Name: fmt.Sprintf("peer_%d", i),
 			})
 			if err != nil {
-				err = fmt.Errorf("client(%d): %v", i, err)
+				err = fmt.Errorf("client(%d): %w", i, err)
 				log.Println(err)
 				setError(err)
 				return
@@ -113,7 +113,7 @@ func TestHubEnterNMDC(t *testing.T) {
 
 			err = pc.SendChatMsg(fmt.Sprintf("msg %d", i))
 			if err != nil {
-				err = fmt.Errorf("client(%d): %v", i, err)
+				err = fmt.Errorf("client(%d): %w", i, err)
 				log.Println(err)
 				setError(err)
 				return

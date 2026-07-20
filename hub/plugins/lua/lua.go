@@ -89,7 +89,7 @@ func (p *plugin) loadScripts(path string) error {
 			p.h.Log("lua: loading script:", name)
 			s, err := p.loadScript(filepath.Join(path, name))
 			if err != nil {
-				return fmt.Errorf("lua: %v", err)
+				return fmt.Errorf("lua: %w", err)
 			}
 			pname := s.getString("script", "name")
 			vers := s.getString("script", "version")

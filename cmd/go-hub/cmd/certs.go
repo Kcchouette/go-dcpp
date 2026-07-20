@@ -56,7 +56,7 @@ func (c *TLSConfig) Generate(host string) (cert, key []byte, _ error) {
 
 	_, rootCertPEM, err := CreateCert(rootCertTmpl, rootCertTmpl, &rootKey.PublicKey, rootKey)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error creating cert: %v", err)
+		return nil, nil, fmt.Errorf("error creating cert: %w", err)
 	}
 
 	// PEM encode the private key
@@ -66,11 +66,11 @@ func (c *TLSConfig) Generate(host string) (cert, key []byte, _ error) {
 
 	err = os.WriteFile(c.Cert, rootCertPEM, 0600)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error writing cert: %v", err)
+		return nil, nil, fmt.Errorf("error writing cert: %w", err)
 	}
 	err = os.WriteFile(c.Key, rootKeyPEM, 0600)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error writing key: %v", err)
+		return nil, nil, fmt.Errorf("error writing key: %w", err)
 	}
 
 	return rootCertPEM, rootKeyPEM, nil

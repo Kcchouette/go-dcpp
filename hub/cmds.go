@@ -834,7 +834,7 @@ func (h *Hub) toCommandFunc(o any, opt *cmdOptions) CommandFunc {
 			case reflDur:
 			case reflInt, reflUint, reflString:
 			default:
-				panic(fmt.Errorf("unsupported type: %v", t))
+				panic(fmt.Errorf("unsupported type: %w", t))
 			}
 		}
 		argt = append(argt, t)
@@ -869,11 +869,11 @@ func (h *Hub) toCommandFunc(o any, opt *cmdOptions) CommandFunc {
 			case reflDur:
 				v, args, err = cmdParseDur(args)
 			default:
-				return fmt.Errorf("unsupported type: %v", t)
+				return fmt.Errorf("unsupported type: %w", t)
 			}
 			if err != nil {
 				i -= argOffs
-				return fmt.Errorf("arg %d: %v", i+1, err)
+				return fmt.Errorf("arg %d: %w", i+1, err)
 			}
 			in = append(in, reflect.ValueOf(v))
 		}
