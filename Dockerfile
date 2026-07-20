@@ -1,5 +1,5 @@
 ### Build stage ###
-FROM golang:1.12-alpine3.11 AS build
+FROM golang:1.25-alpine3.24 AS build
 
 RUN \
 echo "**** install build dependencies ****" && \
@@ -42,7 +42,7 @@ fi
 
 
 ### Final container stage ###
-FROM alpine:3.11
+FROM alpine:3.24
 
 LABEL description="GoHub Direct Connect Hub"
 
