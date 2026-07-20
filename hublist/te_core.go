@@ -18,11 +18,10 @@ func teGetRaw(ctx context.Context, addr string, dst any) error {
 	if !strings.Contains(addr, "?") {
 		addr += `?do=hublist&get=hublist.json`
 	}
-	req, err := http.NewRequest("GET", addr, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", addr, nil)
 	if err != nil {
 		return err
 	}
-	req = req.WithContext(ctx)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
