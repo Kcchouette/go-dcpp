@@ -115,7 +115,7 @@ func TestHubEnterNMDC(t *testing.T) {
 				return
 			}
 			time.Sleep(delay)
-		}()
+		})
 	}
 	wg.Wait()
 	t.Logf("enter in %v", time.Since(start)-delay)
