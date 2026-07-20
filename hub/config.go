@@ -2,7 +2,7 @@ package hub
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 )
 
@@ -159,7 +159,7 @@ func (h *Hub) ConfigKeys() []string {
 		keys = append(keys, k)
 	}
 	h.conf.RUnlock()
-	sort.Strings(keys)
+	slices.Sort(keys)
 	return keys
 }
 

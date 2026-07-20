@@ -9,7 +9,8 @@ import (
 	"net/url"
 	"reflect"
 	"regexp"
-	"sort"
+	"cmp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -233,7 +234,7 @@ func (h *Hub) cmdHelp(p Peer, args string) error {
 		}
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	buf := bytes.NewBuffer(nil)
 	buf.WriteString("available commands:\n\n")
@@ -961,15 +962,14 @@ func (h *Hub) ListCommands(u *User) []*Command {
 		}
 		command = append(command, c)
 	}
-	sort.Slice(command, func(i, j int) bool {
-		a, b := command[i], command[j]
+	slices.SortFunc(command, func(a, b *Command) int {
 		l := min(len(a.Menu), len(b.Menu))
 		for n := 0; n <= l; n++ {
-			if a.Menu[n] != b.Menu[n] {
-				return a.Menu[n] < b.Menu[n]
+			if c := cmp.Compare(a.Menu[n], b.Menu[n]); c != 0 {
+				return c
 			}
 		}
-		return len(a.Menu) <= len(b.Menu)
+		return cmp.Compare(len(a.Menu), len(b.Menu))
 	})
 	return command
 }

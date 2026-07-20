@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 
 	"github.com/direct-connect/go-dcpp/hub"
 )
@@ -124,7 +124,7 @@ TLS verions:
 		for name := range alpn {
 			names = append(names, name)
 		}
-		sort.Strings(names)
+		slices.Sort(names)
 		for _, name := range names {
 			v := alpn[name]
 			_, _ = fmt.Fprintf(buf,
@@ -157,7 +157,7 @@ func (p *hubStats) cmdProtoStats(peer hub.Peer, args string) error {
 	for name := range protos {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	for _, name := range names {
 		v := protos[name]
 		_, _ = fmt.Fprintf(buf,
