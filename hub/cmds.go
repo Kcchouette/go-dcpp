@@ -1,7 +1,6 @@
 package hub
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -236,7 +235,7 @@ func (h *Hub) cmdHelp(p Peer, args string) error {
 	}
 	slices.Sort(names)
 
-	buf := bytes.NewBuffer(nil)
+	var buf strings.Builder
 	buf.WriteString("available commands:\n\n")
 	for _, name := range names {
 		c := h.cmds.byName[name]
@@ -392,7 +391,7 @@ func (h *Hub) cmdLeave(p Peer, args string) error {
 
 func (h *Hub) cmdRooms(p Peer, args string) error {
 	list := h.RoomsFor(p)
-	buf := bytes.NewBuffer(nil)
+	var buf strings.Builder
 	buf.WriteString("available chat rooms:\n")
 	for _, r := range list {
 		buf.WriteString(r.Name() + "\n")
@@ -402,13 +401,13 @@ func (h *Hub) cmdRooms(p Peer, args string) error {
 }
 
 func (h *Hub) cmdConfigEcho(p Peer, key string, val any) {
-	buf := bytes.NewBuffer(nil)
+	var buf strings.Builder
 	buf.WriteString(key)
 	buf.WriteString(" = ")
 	if s, ok := val.(string); ok {
 		buf.WriteString(strconv.Quote(s))
 	} else {
-		fmt.Fprint(buf, val)
+		fmt.Fprint(&buf, val)
 	}
 	h.cmdOutputM(p, Message{Text: buf.String(), Me: true})
 }
@@ -467,7 +466,7 @@ func (h *Hub) cmdConfigSet(p Peer, key, val string) error {
 
 func (h *Hub) cmdConfigGet(p Peer, args RawCmd) error {
 	if args == "" {
-		buf := bytes.NewBuffer(nil)
+		var buf strings.Builder
 		buf.WriteString("config:\n")
 		for _, k := range h.ConfigKeys() {
 			buf.WriteString(k)
@@ -476,7 +475,7 @@ func (h *Hub) cmdConfigGet(p Peer, args RawCmd) error {
 			if s, ok := v.(string); ok {
 				buf.WriteString(strconv.Quote(s))
 			} else {
-				fmt.Fprint(buf, v)
+				fmt.Fprint(&buf, v)
 			}
 			buf.WriteByte('\n')
 		}
@@ -574,7 +573,7 @@ func (h *Hub) cmdUnBanIP(p Peer, args string) error {
 }
 
 func (h *Hub) cmdListBanIP(p Peer, args string) error {
-	buf := bytes.NewBuffer(nil)
+	var buf strings.Builder
 	buf.WriteString("blocked IPs:\n")
 	h.EachHardBlockedIP(func(ip net.IP) bool {
 		buf.WriteString(ip.String() + "\n")

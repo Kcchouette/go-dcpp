@@ -1,11 +1,11 @@
 package hubstats
 
 import (
-	"bytes"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/direct-connect/go-dcpp/hub"
 )
@@ -98,8 +98,8 @@ func (p *hubStats) cmdTLSStats(peer hub.Peer, args string) error {
 	perc := func(v, n uint) float64 {
 		return 100 * float64(v) / float64(n)
 	}
-	buf := bytes.NewBuffer(nil)
-	_, _ = fmt.Fprintf(buf, `TLS statistics:
+	var buf strings.Builder
+	_, _ = fmt.Fprintf(&buf, `TLS statistics:
 Users:  %5d
 TLS:   %5d (%.1f%%)
 ALPN: %5d (%.1f%%)
@@ -127,7 +127,7 @@ TLS verions:
 		slices.Sort(names)
 		for _, name := range names {
 			v := alpn[name]
-			_, _ = fmt.Fprintf(buf,
+			_, _ = fmt.Fprintf(&buf,
 				"%s: %5d (%.1f%%)\n",
 				name, v, perc(v, s.ALPN),
 			)
@@ -151,7 +151,7 @@ func (p *hubStats) cmdProtoStats(peer hub.Peer, args string) error {
 	perc := func(v, n uint) float64 {
 		return 100 * float64(v) / float64(n)
 	}
-	buf := bytes.NewBuffer(nil)
+	var buf strings.Builder
 	buf.WriteString("\nProtocols:\n")
 	names := make([]string, 0, len(protos))
 	for name := range protos {
@@ -160,7 +160,7 @@ func (p *hubStats) cmdProtoStats(peer hub.Peer, args string) error {
 	slices.Sort(names)
 	for _, name := range names {
 		v := protos[name]
-		_, _ = fmt.Fprintf(buf,
+		_, _ = fmt.Fprintf(&buf,
 			"%s: %5d (%.1f%%)\n",
 			name, v, perc(v, total),
 		)
